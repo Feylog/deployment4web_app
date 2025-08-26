@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  labels:
+    app: web-app
+spec:
+  replicas: 4 # по результатам нагрузочного теста — 4 пода справляются с пиком
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1 # чтобы в момент обновления запускался один новый под
+      maxUnavailable: 1 # и при этом максимум один под был недоступен
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: web-app
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: web-app
+      containers:
+        - name: web-app
+          image: your-registry/web-app:latest
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10 # учитываем, что инициализация занимает 5–10 сек
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: "200m" # учитываем резкий рост CPU в начале
+              memory: "128Mi"
+            limits:
+              cpu: "500m" # ограничим, чтобы избежать чрезмерного использования
+              memory: "256Mi"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"] # дожидаемся завершения запросов
+      terminationGracePeriodSeconds: 10 # время на graceful shutdown
+      affinity:
+        podAntiAffinity: # не размещаем поды на одной ноде по возможности
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: web-app
+                topologyKey: kubernetes.io/hostname
