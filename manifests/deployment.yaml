@@ -19,10 +19,10 @@ spec:
       labels:
         app: web-app
     spec:
-      topologySpreadConstraints:
+      topologySpreadConstraints: #чтобы обеспечить равномерное распределение по зонам и по хостам, — это повышает отказоустойчивость.
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule
+          whenUnsatisfiable: DoNotSchedule #гарантирует, что не все поды окажутся в одной зоне.
           labelSelector:
             matchLabels:
               app: web-app
@@ -37,33 +37,33 @@ spec:
           image: your-registry/web-app:latest
           ports:
             - containerPort: 8080
-          readinessProbe:
+          readinessProbe: # с задержкой — чтобы не отправлять трафик пока приложение не проинициализировалось.
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 10 # учитываем, что инициализация занимает 5–10 сек
             periodSeconds: 5
             failureThreshold: 3
-          livenessProbe:
+          livenessProbe: # защищает от подвисаний.
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 10
             failureThreshold: 5
-          resources:
+          resources: # Выделяем достаточно CPU на старт (requests: 200m, limits: 500m), затем под работает на ~0.1 CPU, но requests ниже 200m рискован из-за начального пика.
             requests:
               cpu: "200m" # учитываем резкий рост CPU в начале
               memory: "128Mi"
             limits:
               cpu: "500m" # ограничим, чтобы избежать чрезмерного использования
               memory: "256Mi"
-          lifecycle:
+          lifecycle: # дают приложению 5–10 секунд на завершение работы (на случай активных соединений).
             preStop:
               exec:
                 command: ["/bin/sh", "-c", "sleep 5"] # дожидаемся завершения запросов
       terminationGracePeriodSeconds: 10 # время на graceful shutdown
-      affinity:
+      affinity: # повышает отказоустойчивость на уровне нод.
         podAntiAffinity: # не размещаем поды на одной ноде по возможности
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
